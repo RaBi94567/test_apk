@@ -32,6 +32,10 @@ jobs:
       run: |
         apktool d original.apk -o output --force
 
+    - name: Remove META-INF to avoid signature conflicts
+      run: |
+        rm -rf output/original/META-INF
+
     - name: Replace config.json
       run: |
         cp new_config.json output/assets/flutter_assets/assets/config.json
@@ -39,6 +43,7 @@ jobs:
     - name: Rebuild APK
       run: |
         apktool b output -o unsigned.apk
+
 
     - name: Sign APK
       env:
