@@ -1,4 +1,4 @@
-name: Modify and Sign APK with Temporary Key
+name: Modify and Sign APK
 
 on:
   push:
@@ -12,65 +12,82 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      # 1. Grab your code
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    - name: Setup Java
-      uses: actions/setup-java@v3
-      with:
-        distribution: 'temurin'
-        java-version: 17
+      # 2. Install Java (for keytool) and Android signing tools
+      - name: Setup Java & Android tools
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
 
-    - name: Install apktool & tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y zipalign apksigner wget
-        wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O apktool
-        wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O apktool.jar
-        chmod +x apktool
-        sudo mv apktool apktool.jar /usr/local/bin/
+      - name: Install apktool, zipalign & apksigner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget zipalign apksigner
+          wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O apktool
+          wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O apktool.jar
+          chmod +x apktool
+          sudo mv apktool apktool.jar /usr/local/bin/
 
-    - name: Decompile APK
-      run: |
-        apktool d original.apk -o output --force
+      # 3. Decompile the APK
+      - name: Decompile APK
+        run: |
+          apktool d original.apk -o output --force
 
-    - name: Remove META-INF to avoid signature conflicts
-      run: |
-        rm -rf output/original/META-INF
+      # 4. Remove old signature metadata
+      - name: Remove META-INF (old signatures)
+        run: |
+          rm -rf output/original/META-INF
 
-    - name: Replace config.json
-      run: |
-        cp new_config.json output/assets/flutter_assets/assets/config.json
+      # 5. Replace your config.json
+      - name: Replace config.json
+        run: |
+          cp new_config.json output/assets/flutter_assets/assets/config.json
 
-    - name: Rebuild APK
-      run: |
-        apktool b output -o unsigned.apk
+      # 6. Rebuild into an unsigned APK
+      - name: Rebuild APK
+        run: |
+          apktool b output -o unsigned.apk
 
-    - name: Generate temporary keystore
-      run: |
-        keytool -genkey -v -keystore temp.jks -keyalg RSA -keysize 2048 -validity 10000 -alias tempkey \
-          -storepass password -keypass password -dname "CN=GitHub CI,O=Example,C=US"
+      # 7. Align BEFORE signing (crucial for apksigner)
+      - name: Zipalign APK (pre-sign)
+        run: |
+          zipalign -p -f 4 unsigned.apk aligned.apk
 
-    - name: Sign APK with temporary key
-      run: |
-        apksigner sign \
-          --ks temp.jks \
-          --ks-key-alias tempkey \
-          --ks-pass pass:password \
-          --key-pass pass:password \
-          --out signed.apk \
-          unsigned.apk
+      # 8. Generate a temporary keystore
+      - name: Generate temporary keystore
+        run: |
+          keytool -genkeypair \
+            -alias tempkey \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=GitHub CI,O=Automated,C=US" \
+            -keystore temp.jks \
+            -storepass password \
+            -keypass password
 
-    - name: Verify APK Signature
-      run: |
-        apksigner verify signed.apk
+      # 9. Sign with apksigner (the modern Android signer)
+      - name: Sign APK
+        run: |
+          apksigner sign \
+            --ks temp.jks \
+            --ks-key-alias tempkey \
+            --ks-pass pass:password \
+            --key-pass pass:password \
+            --out final.apk \
+            aligned.apk
 
-    - name: Align APK
-      run: |
-        zipalign -p -f 4 signed.apk final.apk
+      # 10. Verify the signature
+      - name: Verify signature
+        run: |
+          apksigner verify final.apk
 
-    - name: Upload Final APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: signed_apk
-        path: final.apk
+      # 11. Upload the signed APK
+      - name: Upload final.apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed_apk
+          path: final.apk
