@@ -21,8 +21,10 @@ jobs:
         distribution: 'temurin'
         java-version: 17
 
-    - name: Install apktool
+    - name: Install apktool & tools
       run: |
+        sudo apt-get update
+        sudo apt-get install -y wget zipalign apksigner
         wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O apktool
         wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O apktool.jar
         chmod +x apktool
@@ -44,20 +46,30 @@ jobs:
       run: |
         apktool b output -o unsigned.apk
 
+    - name: Decode keystore from base64
+      run: |
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
 
-    - name: Sign APK
+    - name: Sign APK with apksigner (modern & safe)
       env:
         KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+        /usr/bin/apksigner sign \
+          --ks keystore.jks \
+          --ks-key-alias key0 \
+          --ks-pass pass:$KEYSTORE_PASSWORD \
+          --key-pass pass:$KEY_PASSWORD \
+          --out signed.apk \
+          unsigned.apk
 
-        jarsigner -verbose -keystore keystore.jks -storepass $KEYSTORE_PASSWORD -keypass $KEY_PASSWORD -signedjar signed.apk unsigned.apk key0
-
-    - name: Zipalign APK
+    - name: Verify APK signature (optional but good for debugging)
       run: |
-        sudo apt-get install zipalign -y || true
-        zipalign -v 4 signed.apk final.apk
+        /usr/bin/apksigner verify signed.apk
+
+    - name: Align APK (must be done AFTER signing if using `apksigner`)
+      run: |
+        zipalign -p -f 4 signed.apk final.apk
 
     - name: Upload Final APK
       uses: actions/upload-artifact@v4
