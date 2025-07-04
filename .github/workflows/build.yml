@@ -1,4 +1,4 @@
-name: Modify and Sign APK
+name: Modify and Sign APK with Temporary Key
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
     - name: Install apktool & tools
       run: |
         sudo apt-get update
-        sudo apt-get install -y wget zipalign apksigner
+        sudo apt-get install -y zipalign apksigner wget
         wget https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O apktool
         wget https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar -O apktool.jar
         chmod +x apktool
@@ -46,28 +46,26 @@ jobs:
       run: |
         apktool b output -o unsigned.apk
 
-    - name: Decode keystore from base64
+    - name: Generate temporary keystore
       run: |
-        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+        keytool -genkey -v -keystore temp.jks -keyalg RSA -keysize 2048 -validity 10000 -alias tempkey \
+          -storepass password -keypass password -dname "CN=GitHub CI,O=Example,C=US"
 
-    - name: Sign APK with apksigner (modern & safe)
-      env:
-        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+    - name: Sign APK with temporary key
       run: |
-        /usr/bin/apksigner sign \
-          --ks keystore.jks \
-          --ks-key-alias key0 \
-          --ks-pass pass:$KEYSTORE_PASSWORD \
-          --key-pass pass:$KEY_PASSWORD \
+        apksigner sign \
+          --ks temp.jks \
+          --ks-key-alias tempkey \
+          --ks-pass pass:password \
+          --key-pass pass:password \
           --out signed.apk \
           unsigned.apk
 
-    - name: Verify APK signature (optional but good for debugging)
+    - name: Verify APK Signature
       run: |
-        /usr/bin/apksigner verify signed.apk
+        apksigner verify signed.apk
 
-    - name: Align APK (must be done AFTER signing if using `apksigner`)
+    - name: Align APK
       run: |
         zipalign -p -f 4 signed.apk final.apk
 
