@@ -55,7 +55,7 @@ jobs:
         zipalign -v 4 signed.apk final.apk
 
     - name: Upload Final APK
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: signed_apk
         path: final.apk
